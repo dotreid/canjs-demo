@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Shop</title>
+    <style>
+      body {
+        background-color: #87cefa;
+        margin: 5vh 5vw;
+      }
+      
+      .shop-header {
+        background-color: #000000;
+        color: #ffffff;
+        float: left;
+        font-family: sans-serif;
+        font-size: 30pt;
+        font-weight: bold;
+        height: 10vh;
+        line-height: 10vh;
+        padding: 0 5vw;
+        user-select: none;
+        width: 70vw;
+      }
+      
+      .cart-button {
+        background-color: #ffa500;
+        float: left;
+        font-size: 30pt;
+        height: 10vh;
+        line-height: 10vh;
+        text-align: center;
+        user-select: none;
+        width: 10vw;
+      }
+      
+      .product-list {
+        background-color: #d3d3d3;
+        float: left;
+        height: 80vh;
+        overflow: auto;
+        width: 10vw;
+      }
+      
+      .product-list-row {
+        border: #000000 dashed 1px;
+        padding: 1vh 0;
+        text-align: center;
+        user-select: none;
+      }
+      
+      .product-image {
+        margin: 1vh 1vw;
+        width: calc((100% - 8vw) / 4); /* 4 images per row */
+      }
+      
+      .product-image:hover {
+        border: #ffffff solid;
+        border-width: 1vh 1vw;
+        margin: 0;
+      }
+      
+      .product-image:active {
+        opacity: 0.5;
+      }
+      
+      .product-view {
+        background-color: #808080;
+        float: left;
+        font-size: 0;
+        height: 78vh;
+        overflow: auto;
+        padding: 1vh 1vw;
+        user-select: none;
+        width: 78vw;
+      }
+      
+      .cart-view {
+        background-color: #ffa500;
+      }
+      
+      .shop-view {
+        height: 90vh;
+        width: 90vw;
+      }
+    </style>
+  </head>
+  <body>
+    <shop-view></shop-view>
+    <script type="module">
+      import {
+        ObservableArray,
+        StacheElement
+      } from "https://unpkg.com/can@6/core.mjs";
+      
+      class Products extends ObservableArray {
+        images = new ObservableArray();
+        
+        addProduct(name) {
+          if (this.includes(name)) {
+            return;
+          }
+          
+          // create 5-10 images
+          const count = 5 + Math.floor(Math.random() * 6);
+          
+          fetch("https://source.unsplash.com/200x200/?" + name)
+            .then(response => response.blob())
+            .then(blob => {
+              const reader = new FileReader();
+              
+              reader.addEventListener("load", () => {
+                this.images[name] = new Array(count);
+                
+                for (let i = 0; i < count; ++i) {
+                  this.images[name][i] = {
+                    src: reader.result,
+                    style: `filter: hue-rotate(${i * 360 / count}deg)`,
+                    alt: `${name} #${i + 1}`
+                  };
+                }
+              }, false);
+              
+              reader.readAsDataURL(blob);
+            });
+          
+          this.push(name);
+        }
+      }
+      
+      const products = new Products();
+      products.addProduct("Food");
+      products.addProduct("Clothes");
+      products.addProduct("Books");
+      products.addProduct("Music");
+      products.addProduct("Games");
+      
+      const cart = new ObservableArray();
+      
+      class ShopHeader extends StacheElement {
+        static view = `<div class="shop-header">{{ this.headerText }}</div>`;
+        
+        static props = {
+          get headerText() {
+            if (this.showCart) {
+              return "Cart";
+            } else if (this.product) {
+              return "Shop for " + this.product;
+            }
+            
+            return "Shop for ...";
+          }
+        };
+      }
+      customElements.define("shop-header", ShopHeader);
+      
+      class ProductList extends StacheElement {
+        static view = `
+          <div class="product-list">
+            {{# for(product of this.products) }}
+              <div on:click="this.selectProduct(product)" class="product-list-row">
+                {{# if(this.products.images[product]) }}
+                  {{ product }}
+                {{ else }}
+                  loading...
+                {{/ if }}
+              </div>
+            {{/ for }}
+            <div on:click="this.promptProduct()" class="product-list-row">+</div>
+          </div>
+        `;
+        
+        selectProduct(product) {
+          if (this.products.images[product]) {
+            this.dispatch({type: "selected", value: product});
+          }
+        }
+        
+        promptProduct() {
+          const name = prompt("Add product type:");
+          
+          if (name && name.trim() !== "") {
+            products.addProduct(name.trim());
+          }
+        }
+      }
+      customElements.define("product-list", ProductList);
+      
+      class ProductView extends StacheElement {
+        static view = `
+          <div class={{ this.css }}>
+            {{# for(img of this.list) }}
+              <img
+                  src={{ img.src }}
+                  style={{ img.style }}
+                  alt={{ img.alt }}
+                  title={{ img.alt }}
+                  on:click="this.selectItem(img)"
+                  class="product-image"
+                  draggable="false">
+            {{/ for }}
+          </div>
+        `;
+        
+        static props = {
+          list: Array,
+          css: String
+        };
+        
+        selectItem(img) {
+          this.dispatch({type: "selected", value: img});
+        }
+      }
+      customElements.define("product-view", ProductView);
+      
+      class ShopView extends StacheElement {
+        static view = `
+          <div class="shop-view">
+            <shop-header
+                showCart:from="this.showCart"
+                product:from="this.selectedProduct">
+            </shop-header>
+            <div on:click="this.toggleCart()" class="cart-button">&#128722;</div>
+            <product-list
+                products:from="this.products"
+                on:selected="this.onSelectedProduct(scope.event)">
+            </product-list>
+            {{# unless(this.showCart) }}
+              <product-view
+                  list:from="this.products.images[this.selectedProduct]"
+                  css:from="'product-view'"
+                  on:selected="this.onAddItem(scope.event)">
+              </product-view>
+            {{ else }}
+              <product-view
+                  list:from="this.cart"
+                  css:from="'product-view cart-view'"
+                  on:selected="this.onRemoveItem(scope.event)">
+              </product-view>
+            {{/ unless }}
+          </div>
+        `;
+        
+        static props = {
+          get products() {
+            return products;
+          },
+          cart: {
+            get default() {
+              return cart;
+            }
+          },
+          showCart: false,
+          selectedProduct: ""
+        };
+        
+        toggleCart() {
+          this.showCart = !this.showCart;
+        }
+        
+        onSelectedProduct(ev) {
+          this.showCart = false;
+          this.selectedProduct = ev.value;
+        }
+        
+        onAddItem(ev) {
+          if (!this.cart.includes(ev.value)) {
+            this.cart.push(ev.value);
+          }
+        }
+        
+        onRemoveItem(ev) {
+          this.cart = this.cart.filter(item => (item != ev.value));
+        }
+      }
+      customElements.define("shop-view", ShopView);
+    </script>
+  </body>
+</html>
